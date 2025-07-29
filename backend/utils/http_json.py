@@ -56,7 +56,29 @@ class JSONRequestHandler(BaseHTTPRequestHandler):
             self._set_headers(200)
             self.wfile.write(json.dumps({'status': 'ok'}).encode('utf-8'))
         
-        # 获取书籍信息接口
+        # 获取所有书籍接口
+        elif self.path == '/api/books':
+            from backend.utils.path import get_books_dir
+            from backend.utils.file import list_dir
+            import os
+            
+            books_dir = get_books_dir()
+            books = []
+            
+            if os.path.exists(books_dir):
+                for book_id in list_dir(books_dir):
+                    book_path = os.path.join(books_dir, book_id)
+                    metadata_path = os.path.join(book_path, 'info.json')
+                    try:
+                        metadata = json_load(metadata_path)
+                        books.append(metadata)
+                    except Exception as e:
+                        logger.warning(f'Failed to load book {book_id}: {str(e)}')
+            
+            self._set_headers(200)
+            self.wfile.write(json.dumps(books).encode('utf-8'))
+        
+        # 获取单本书籍信息接口
         elif re.match(r'^/api/books/([^/]+)$', self.path):
             book_id = re.match(r'^/api/books/([^/]+)$', self.path).group(1)
             book_path = get_book_path(book_id)
@@ -100,22 +122,121 @@ class JSONRequestHandler(BaseHTTPRequestHandler):
         # 创建书籍接口
         if self.path == '/api/books':
             try:
-                data = self._parse_json()
-                from backend.create_book import create_book
-                from backend.utils.uuid import generate_uuid
-                
-                book_id = generate_uuid()
-                result = create_book(
-                    book_id=book_id,
-                    book_name=data.get('book_name'),
-                    user_uid=data.get('user_uid')
-                )
-                
-                self._set_headers(201 if result else 400)
-                self.wfile.write(json.dumps({
-                    'success': result,
-                    'book_id': book_id if result else None
-                }).encode('utf-8'))
+                content_type = self.headers.get('Content-Type', '')
+                if 'multipart/form-data' in content_type:
+                    # 解析表单数据
+                    import cgi
+                    import os
+                    from backend.utils.path import get_book_path
+                    from backend.utils.uuid import generate_uuid
+                    from backend.utils.file import create_directory
+                    from backend.utils.json import json_dump
+
+                    form = cgi.FieldStorage(
+                        fp=self.rfile,
+                        headers=self.headers,
+                        environ={'REQUEST_METHOD': 'POST', 'CONTENT_TYPE': content_type}
+                    )
+
+                    fields = {key: form.getvalue(key) for key in form.keys() if key in ['name', 'author', 'category', 'user_uid']}
+                    files = {key: form[key] for key in form.keys() if key == 'cover' and form[key].filename}
+
+                    # 验证必填字段
+                    if not fields.get('name') or not fields.get('author') or not fields.get('user_uid'):
+                        self._set_headers(400)
+                        self.wfile.write(json.dumps({'error': '书籍名称、作者和用户ID为必填项'}).encode('utf-8'))
+                        return
+
+                    # 生成书籍ID
+                    book_id = generate_uuid()
+                    book_path = get_book_path(book_id)
+                    create_directory(book_path)
+
+                    # 保存封面图片
+                    cover_path = None
+                    if 'cover' in files:
+                        cover_file = files['cover']
+                        ext = os.path.splitext(cover_file.filename)[1].lower()
+                        if ext not in ['.jpg', '.jpeg', '.png', '.gif']:
+                            self._set_headers(400)
+                            self.wfile.write(json.dumps({'error': '不支持的图片格式'}).encode('utf-8'))
+                            return
+                        cover_path = os.path.join(book_path, f'cover{ext}')
+                        with open(cover_path, 'wb') as f:
+                            f.write(cover_file.file.read())
+
+                    # 准备书籍数据
+                    book_data = {
+                        'id': book_id,
+                        'name': fields['name'],
+                        'author': fields['author'],
+                        'category': fields.get('category', 'other'),
+                        'user_uid': fields['user_uid'],
+                        'coverImage': cover_path.replace(os.path.abspath(''), '')[1:] if cover_path else None,
+                        'readProgress': 0,
+                        'chaptersRead': 0,
+                        'totalChapters': 0,
+                        'isCompleted': False,
+                        'hasCover': bool(cover_path)
+                    }
+
+                    # 保存书籍信息
+                    json_dump(os.path.join(book_path, 'info.json'), book_data)
+                    self._set_headers(201)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'book_id': book_id
+                    }).encode('utf-8'))
+
+                # 处理JSON数据（保持原有支持）
+                else:
+                    # 处理JSON数据
+                    import os
+                    from backend.utils.path import get_book_path
+                    from backend.utils.uuid import generate_uuid
+                    from backend.utils.file import create_directory
+                    from backend.utils.json import json_dump
+
+                    data = self._parse_json()
+
+                    # 验证必填字段
+                    if not data.get('name') or not data.get('author') or not data.get('user_uid'):
+                        self._set_headers(400)
+                        self.wfile.write(json.dumps({'error': '书籍名称、作者和用户ID为必填项'}).encode('utf-8'))
+                        return
+
+                    # 生成书籍ID
+                    book_id = generate_uuid()
+                    book_path = get_book_path(book_id)
+                    # 使用同步文件操作
+                    import os
+                    import json
+                    os.makedirs(book_path, exist_ok=True)
+
+                    # 准备书籍数据
+                    book_data = {
+                        'id': book_id,
+                        'name': data.get('name', 'Unnamed Book'),
+                        'author': data.get('author', ''),
+                        'category': data.get('category', 'other'),
+                        'user_uid': data.get('user_uid'),
+                        'coverImage': None,
+                        'readProgress': 0,
+                        'chaptersRead': 0,
+                        'totalChapters': 0,
+                        'isCompleted': False,
+                        'hasCover': False
+                    }
+
+                    # 保存书籍信息
+                    with open(os.path.join(book_path, 'info.json'), 'w', encoding='utf-8') as f:
+                        json.dump(book_data, f, ensure_ascii=False, indent=2)
+                    self._set_headers(201)
+                    self.wfile.write(json.dumps({
+                        'success': True,
+                        'book_id': book_id
+                    }).encode('utf-8'))
+
             except Exception as e:
                 self._set_headers(500)
                 self.wfile.write(json.dumps({'error': 'Internal server error', 'details': str(e)}).encode('utf-8'))

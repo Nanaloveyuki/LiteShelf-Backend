@@ -8,6 +8,7 @@ File utilities
 
 import pathlib
 from loguru import logger
+from typing import List
 
 async def delete_file(file_path: str) -> bool:
     """
@@ -154,3 +155,21 @@ async def create_file(file_path: str) -> bool:
     except Exception as e:
         logger.error(f"文件 {file_path} 创建失败, 异常信息: {e}")
         return False
+
+def list_dir(directory: str) -> List[str]:
+    """
+    列出目录下的所有条目
+    List all entries in directory
+    Args:
+        directory (str): 目录路径 Directory path
+    Returns:
+        List[str]: 目录下的条目名称列表 List of entry names
+    """
+    try:
+        return [entry.name for entry in os.scandir(directory) if entry.is_dir()]
+    except FileNotFoundError:
+        logger.error(f"目录 {directory} 不存在")
+        return []
+    except Exception as e:
+        logger.error(f"列出目录 {directory} 失败, 异常信息: {e}")
+        return []

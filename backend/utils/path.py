@@ -85,6 +85,15 @@ def delete_dir(path: str) -> bool:
         logger.error(f"目录 {path} 删除失败, 异常信息: {e}")
         return False
 
+def get_books_dir() -> str:
+    """
+    获取书籍存储目录
+    Get books storage directory
+    Returns:
+        str: 书籍目录路径 Books directory path
+    """
+    return str(pathlib.Path(__file__).parent.parent / "books")
+
 def get_user_path(user_uid: str) -> str:
     """
     获取用户路径
