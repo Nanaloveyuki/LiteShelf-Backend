@@ -105,7 +105,7 @@ class JSONRequestHandler(BaseHTTPRequestHandler):
                 from backend.utils.uuid import generate_uuid
                 
                 book_id = generate_uuid()
-                result = await create_book(
+                result = create_book(
                     book_id=book_id,
                     book_name=data.get('book_name'),
                     user_uid=data.get('user_uid')
@@ -126,7 +126,7 @@ class JSONRequestHandler(BaseHTTPRequestHandler):
                 data = self._parse_json()
                 from backend.utils.user import create_user
                 
-                user_uid = await create_user(
+                user_uid = create_user(
                     user_name=data.get('user_name'),
                     user_pswd=data.get('user_pswd')
                 )
@@ -141,7 +141,7 @@ class JSONRequestHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({'error': 'Internal server error', 'details': str(e)}).encode('utf-8'))
         
         # 原始数据处理接口
-        elif self.path == '/api/data'
+        elif self.path == '/api/data':
             try:
                 data = self._parse_json()
                 # 处理接收到的JSON数据
@@ -153,8 +153,41 @@ class JSONRequestHandler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps({'error': 'Invalid JSON'}).encode('utf-8'))
             except Exception as e:
                 self._set_headers(status_code=500)
-                logger.error(f"处理 POST 请求失败, 异常信息: {e}")
+                logger.error(f"处理 POST 请求失败,异常信息: {e}")
                 self.wfile.write(json.dumps({'error': 'Internal server error', 'details': str(e)}).encode('utf-8'))
         else:
             self._set_headers(status_code=404)
+            self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
+    
+    def do_PUT(self) -> None:
+        """
+        处理 PUT 请求
+        Handle PUT request
+        """
+        import re
+        from backend.utils.user import update_user_profile
+        
+        # 更新用户资料接口
+        if re.match(r'^/api/users/([^/]+)/profile$', self.path):
+            user_uid = re.match(r'^/api/users/([^/]+)/profile$', self.path).group(1)
+            try:
+                data = self._parse_json()
+                # 提取需要更新的字段 Extract fields to update
+                update_fields = {}
+                if 'avatar_url' in data:
+                    update_fields['avatar_url'] = data['avatar_url']
+                if 'bio' in data:
+                    update_fields['bio'] = data['bio']
+                
+                success = update_user_profile(user_uid, **update_fields)
+                self._set_headers(200 if success else 400)
+                self.wfile.write(json.dumps({
+                    'success': success,
+                    'message': 'Profile updated successfully' if success else 'Failed to update profile'
+                }).encode('utf-8'))
+            except Exception as e:
+                self._set_headers(500)
+                self.wfile.write(json.dumps({'error': 'Internal server error', 'details': str(e)}).encode('utf-8'))
+        else:
+            self._set_headers(404)
             self.wfile.write(json.dumps({'error': 'Not found'}).encode('utf-8'))
