@@ -97,7 +97,7 @@ def update_user_profile(user_uid: str, **kwargs) -> bool:
         **kwargs: 可选字段 Optional fields: avatar_url, bio
     Returns:
         bool: 更新是否成功
-    ""
+    """
     try:
         user_info = get_user_info(user_uid)
         # 更新提供的字段 Update provided fields

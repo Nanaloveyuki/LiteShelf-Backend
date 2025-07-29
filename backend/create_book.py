@@ -9,7 +9,7 @@ Create book
 from loguru import logger
 from backend.utils.path import create_dir, get_book_path
 
-def create_book(book_id: str, book_name: str, user_uid: str) -> bool:
+async def create_book(book_id: str, book_name: str, user_uid: str) -> bool:
     """
     创建图书
     Create book
